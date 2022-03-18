@@ -2,6 +2,8 @@ from functools import partial
 import json
 import os
 import sublime
+import pathlib
+import tempfile
 
 from sublime_plugin import (
     EventListener,
@@ -24,6 +26,7 @@ from . import inline
 from . import paredit
 from . import progress
 from . import namespace
+from . import temp
 from . import test
 from . import repl
 from . import completions
@@ -148,6 +151,10 @@ class TemporaryFileEventListener(ViewEventListener):
 
                 if name := temp_file.get("name"):
                     self.view.set_name(name)
+
+                if temp_file.get("selection") == "end":
+                    self.view.sel().clear()
+                    self.view.sel().add(sublime.Region(self.view.size(), self.view.size()))
 
                 if path and descriptor and os.path.exists(path):
                     os.close(descriptor)
@@ -501,6 +508,8 @@ class TutkainConnectCommand(WindowCommand):
             )
 
     def connect(self, dialect, host, port, view, output, backchannel, build_id):
+        backchannel_options = repl.backchannel_options(self.window.project_data(), dialect, backchannel)
+
         if dialect == edn.Keyword("cljs"):
             if not backchannel:
                 sublime.error_message("[Tutkain]: The backchannel: false argument to tutkain_connect is currently not supported for ClojureScript.")
@@ -511,7 +520,7 @@ class TutkainConnectCommand(WindowCommand):
                     options={
                         "build_id": build_id,
                         "prompt_for_build_id": lambda ids, on_done: self.choose_build_id(view, ids, on_done),
-                        "backchannel": settings.backchannel_options(dialect, backchannel)
+                        "backchannel": backchannel_options
                     }
                 )
 
@@ -525,7 +534,7 @@ class TutkainConnectCommand(WindowCommand):
             client = repl.JVMClient(
                 host,
                 port,
-                options={"backchannel": settings.backchannel_options(dialect, backchannel)}
+                options={"backchannel": backchannel_options}
             )
 
             repl.start(view, client)
@@ -1250,6 +1259,23 @@ class TutkainDirCommand(TextCommand):
             self.view.window().status_message(f"⚠ Not connected to a {dialects.name(dialect)} REPL.")
 
 
+class TutkainTranscribeCommand(TextCommand):
+    def run(self, _):
+        window = self.view.window()
+        dialect = dialects.for_view(self.view)
+
+        if dialect != edn.Keyword("clj"):
+            self.view.window().status_message(f"Transcription is only supported for Clojure.")
+        elif client := state.get_client(window, dialect):
+            client.backchannel.send({
+                "op": edn.Keyword("transcribe"),
+                "file": self.view.file_name(),
+                "code": self.view.substr(sublime.Region(0, self.view.size()))
+            })
+        else:
+            self.view.window().status_message(f"⚠ Not connected to a {dialects.name(dialect)} REPL.")
+
+
 class TutkainLoadedLibsCommand(TextCommand):
     def run(self, _):
         window = self.view.window()
@@ -1262,6 +1288,24 @@ class TutkainLoadedLibsCommand(TextCommand):
             }, lambda response: query.handle_response(window, completions.KINDS, response))
         else:
             self.view.window().status_message(f"⚠ Not connected to a {dialects.name(dialect)} REPL.")
+
+
+class TutkainSplitViewCommand(TextCommand):
+    def run(self, _):
+        view = self.view
+        window = view.window()
+        dialect = dialects.for_view(view)
+        extension = dialects.extension(dialect)
+
+        if file_name := view.file_name():
+            name = os.path.splitext(file_name)[0] + ".repl"
+        else:
+            name = "untitled.repl"
+
+        ns = namespace.name_or_default(view, dialect)
+        writef = lambda file: file.write(f"(in-ns '{ns})\n\n")
+
+        temp.open_file(window, file_name, extension, writef)
 
 
 class TutkainExploreStackTraceCommand(TextCommand):

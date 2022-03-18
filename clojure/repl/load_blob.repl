@@ -32,9 +32,13 @@
   []
   (-> recvq (.poll 1 TimeUnit/SECONDS)))
 
+(def eval-context (atom {}))
+
 (backchannel/handle
   {:op :load
    :file nil
+   :eval-lock (Object.)
+   :eval-context eval-context
    :code (string->base64 "(defn square [x] (* x x))")
    :out-fn #(.put recvq %)})
 
@@ -44,22 +48,23 @@
 (backchannel/handle
   {:op :load
    :file "/my/path/math.clj"
+   :eval-lock (Object.)
+   :eval-context eval-context
    :code (string->base64 "(defn square [x] (* x x))")
    :out-fn #(.put recvq %)})
 
 (recv)
 (xr/check! ::ret)
 
-(def eval-context (atom {}))
-
 (backchannel/handle
   {:op :load
+   :eval-lock (Object.)
    :eval-context eval-context
    :file "/my/path/math.clj"
    :code (string->base64 "(defn square [x] (* x x)") ;; no closing paren
    :out-fn #(.put recvq %)})
 
-(xr/check! (partial instance? Throwable) (get @eval-context #'*e))
+(xr/check! (partial instance? Throwable) (get-in @eval-context [:thread-bindings #'*e]))
 
 (def ex (recv))
 (xr/check! ::ex ex)

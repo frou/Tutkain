@@ -24,6 +24,14 @@
         "command": "tutkain_evaluate"
     },
     {
+        "caption": "Tutkain: Split View",
+        "command": "tutkain_split_view"
+    },
+    {
+        "caption": "Tutkain: Transcribe",
+        "command": "tutkain_transcribe"
+    },
+    {
         "caption": "Tutkain: Clear Output View",
         "command": "tutkain_clear_output_view"
     },
