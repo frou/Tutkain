@@ -534,12 +534,14 @@ class TutkainConnectCommand(WindowCommand):
     def run(self, dialect, host, port, view_id=None, output="view", backchannel=True, build_id=None):
         active_view = self.window.active_view()
         output_view = repl.views.get_or_create_view(self.window, output, view_id)
+        dialect = edn.Keyword(dialect)
+        port = ports.parse(self.window, port, dialect, ports.discover)
 
         try:
             self.connect(
-                edn.Keyword(dialect),
+                dialect,
                 host,
-                int(port),
+                port,
                 output_view,
                 output,
                 backchannel,
